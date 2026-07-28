@@ -19,7 +19,7 @@ sets
  (
     nacelle
     {{
-        type        points;
+        type        cloud;
         axis        xyz;
         ordered     false;
         points

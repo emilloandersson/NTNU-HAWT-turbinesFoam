@@ -58,7 +58,8 @@ def log_results(param="turbine1_yaw", append=True, verbose=True):
         print("Logging results:")
         for k, v in d.items():
             print(f"    {k}: {v}")
-    df = df.append(d, ignore_index=True)
+    # df = df.append(d, ignore_index=True) # OLD (broken in pandas 2.x)
+    df = pd.concat([df, pd.DataFrame([d])], ignore_index=True) # NEW 
     df.to_csv(fpath, index=False)
 
 
@@ -158,7 +159,7 @@ def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
         # Update kwargs for this value
         kwargs.update({param: p})
         run(parallel=parallel, tee=tee, mesh=mesh, reconstruct=False,
-            post=False, **kwargs)
+            post=False, overwrite=True, **kwargs)
         os.rename("log.pimpleFoam", "log.pimpleFoam." + str(p))
         log_results(param=param, append=True)
         foampy.clean(leave_mesh=True, remove_zero=True)
@@ -290,7 +291,7 @@ if __name__ == "__main__":
             parallel=not args.serial,
             tee=args.tee,
             mesh=not args.leave_mesh,
-            overwrite=args.leave_mesh)
+            overwrite=args.overwrite)
     if args.post:
         post_process(parallel=not args.serial, tee=args.tee,
                      overwrite=args.overwrite)
