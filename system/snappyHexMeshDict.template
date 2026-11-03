@@ -32,15 +32,31 @@ geometry
     refinementBox1
     {{
         type searchableBox;
-        min (1.388 -0.65 -0.65);
-        max (4.088  0.65  0.65);
+        min ({turbine1_refBox_pmin});
+        max ({turbine1_refBox_pmax});
+     }}
+
+     refinementCylinder1
+     {{
+         type searchableCylinder;
+         point1 ({turbine1_refCyl_p1});
+         point2 ({turbine1_refCyl_p2});
+         radius {turbine1_refCyl_r};
      }}
 
     refinementBox2
     {{
         type searchableBox;
-        min (4.088 -0.7 -0.7);
-        max (6.842  0.7  0.7);
+        min ({turbine2_refBox_pmin});
+        max ({turbine2_refBox_pmax});
+     }}
+
+     refinementCylinder2
+     {{
+         type searchableCylinder;
+         point1 ({turbine2_refCyl_p1});
+         point2 ({turbine2_refCyl_p2});
+         radius {turbine2_refCyl_r};
      }}
 
     {geometry_block}
@@ -137,6 +153,12 @@ castellatedMeshControls
     refinementRegions
     {{
         "(refinementBox1|refinementBox2)"
+        {{
+            mode        inside;
+            levels      ((1e15 1));
+        }}
+
+        "(refinementCylinder1|refinementCylinder2)"
         {{
             mode        inside;
             levels      ((1e15 2));

@@ -26,7 +26,7 @@ turbine1
         fieldNames          (U);
         selectionMode       cellSet; // cellSet || points || cellZone
         cellSet             turbine1;
-        origin              ({turbine1_x} 0 0);
+        origin              ({turbine1_x} {turbine1_y} 0);
         axis                (-1 0 0);
         verticalDirection   (0 0 1);
         freeStreamVelocity  (10 0 0);
@@ -149,7 +149,7 @@ turbine2
         fieldNames          (U);
         selectionMode       cellSet; // cellSet || points || cellZone
         cellSet             turbine2;
-        origin              ({turbine2_x} 0 0); // 2.682
+        origin              ({turbine2_x} {turbine2_y} 0); // 2.682
         axis                (-1 0 0);
         verticalDirection   (0 0 1);
         freeStreamVelocity  (10 0 0);

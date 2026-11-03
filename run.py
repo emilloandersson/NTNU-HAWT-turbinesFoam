@@ -269,42 +269,137 @@ def get_features_block(use_stl=False):
     return FEATURES_STL if use_stl else FEATURES_NONE
 
 
+def make_refinement_boxes(turbine_x, turbine_y,
+                          turbine_D, active,
+                          dx1_frac=1.5, dx2_frac=5.5,
+                          dy1_frac=1.5, dy2_frac=1.5,
+                          dz1_frac=1.0, dz2_frac=1.0):
+    """Return pmin and pmax strings for refinement box."""
+    if active == "off":
+        return " -1e6 -1e6 -1e6 ", " -1e6 -1e6 -1e6 "
+
+    x1 = turbine_x - dx1_frac * turbine_D
+    x2 = turbine_x + dx2_frac * turbine_D
+    y1 = turbine_y - dy1_frac * turbine_D
+    y2 = turbine_y + dy2_frac * turbine_D
+    z1 =         0 - dz1_frac * turbine_D
+    z2 =         0 + dz2_frac * turbine_D
+
+    pmin = f" {x1} {y1} {z1} "
+    pmax = f" {x2} {y2} {z2} "
+    return pmin, pmax
+
+
+def make_refinement_cylinders(turbine_x, turbine_y, turbine_D,
+                              turbine_yaw, active,
+                              dx1_frac=0.75, dx2_frac=1.0,
+                              dr_frac=1.5):
+    """Return p1, p2, r for refinement cylinder."""
+    if active == "off":
+        return " -1.1e6 -1.1e6 -1.1e6 ", " -1e6 -1e6 -1e6 ", 0.1
+
+    yaw_rad = np.deg2rad(turbine_yaw)
+
+    dx = np.cos(yaw_rad)
+    dy = np.sin(yaw_rad)
+
+    x1 = turbine_x - dx * dx1_frac * turbine_D
+    y1 = turbine_y - dy * dx1_frac * turbine_D
+
+    x2 = turbine_x + dx * dx2_frac * turbine_D
+    y2 = turbine_y + dy * dx2_frac * turbine_D
+
+    r  = dr_frac * 0.5 * turbine_D
+
+    p1_str = f" {x1} {y1} 0 "
+    p2_str = f" {x2} {y2} 0 "
+    return p1_str, p2_str, r
+
+
 def set_turbine_params(turbine1_tsr=6, turbine1_active="on",
-                       turbine1_x=0,
+                       turbine1_x=1.788, turbine1_y=0,
+                       turbine1_D=0.944,
                        turbine2_tsr=4, turbine2_active="on",
-                       turbine2_x=2.682,
+                       turbine2_x=4.470, turbine2_y=0,
+                       turbine2_D=0.894,
                        turbine1_yaw=0, turbine2_yaw=0,
                        use_stl = False, verbose=True):
     """Write file defining turbine operating parameters.
 
     ``tsr_phase`` is in radians.
     """
-    args2 = {"turbine1_upstream_x": turbine1_x - 0.25,
-             "turbine1_downstream_x": turbine1_x + 0.25,
-             "turbine1_tower_x": turbine1_x + 0.48,
-             "turbine2_upstream_x": turbine2_x - 0.25,
-             "turbine2_downstream_x": turbine2_x + 0.25,
-             "turbine2_tower_x": turbine2_x + 0.14}
-    foampy.fill_template("system/topoSetDict.template", **args2)
-    params = {"turbine1_tsr": turbine1_tsr,
-              "turbine1_active": turbine1_active,
-              "turbine1_x": turbine1_x,
-              "turbine1_yaw": turbine1_yaw,
-              "turbine2_tsr": turbine2_tsr,
-              "turbine2_active": turbine2_active,
-              "turbine2_x": turbine2_x,
-              "turbine2_yaw": turbine2_yaw}
-
     geom_txt = get_snappy_geometry(use_stl)
     refine_txt = get_refinement_surfaces(use_stl)
     features_txt = get_features_block(use_stl)
 
+    # Even though a turbine is inactive, topoSet should not affect the
+    # simulation if it does not intersect with any cells with turbine forces
+    args_topoSet = {
+        "turbine1_upstream_x": turbine1_x - 0.25,
+        "turbine1_downstream_x": turbine1_x + 0.25,
+        "turbine1_rotor_y": turbine1_y,
+        "turbine1_tower_x": turbine1_x + 0.48,
+        "turbine1_tower_y": turbine1_y,
+        "turbine2_upstream_x": turbine2_x - 0.25,
+        "turbine2_downstream_x": turbine2_x + 0.25,
+        "turbine2_rotor_y": turbine2_y,
+        "turbine2_tower_x": turbine2_x + 0.14,
+        "turbine2_tower_y": turbine2_y
+    }
+    foampy.fill_template("system/topoSetDict.template", **args_topoSet)
+
+    t1_pmin, t1_pmax = make_refinement_boxes(
+        turbine_x=turbine1_x, turbine_y=turbine1_y,
+        turbine_D=turbine1_D, active=turbine1_active
+    )
+    t2_pmin, t2_pmax = make_refinement_boxes(
+        turbine_x=turbine2_x, turbine_y=turbine2_y,
+        turbine_D=turbine2_D, active=turbine2_active
+    )
+
+    t1_cyl_p1, t1_cyl_p2, t1_cyl_r = make_refinement_cylinders(
+        turbine_x=turbine1_x, turbine_y=turbine1_y,
+        turbine_D=turbine1_D, turbine_yaw=turbine1_yaw,
+        active=turbine1_active
+    )
+    t2_cyl_p1, t2_cyl_p2, t2_cyl_r = make_refinement_cylinders(
+        turbine_x=turbine2_x, turbine_y=turbine2_y,
+        turbine_D=turbine2_D, turbine_yaw=turbine2_yaw,
+        active=turbine2_active
+    )
+
+
     args_snappyHexMesh = {
+        "turbine1_refBox_pmin": t1_pmin,
+        "turbine1_refBox_pmax": t1_pmax,
+        "turbine1_refCyl_p1": t1_cyl_p1,
+        "turbine1_refCyl_p2": t1_cyl_p2,
+        "turbine1_refCyl_r":  t1_cyl_r,
+
+        "turbine2_refBox_pmin": t2_pmin,
+        "turbine2_refBox_pmax": t2_pmax,
+        "turbine2_refCyl_p1": t2_cyl_p1,
+        "turbine2_refCyl_p2": t2_cyl_p2,
+        "turbine2_refCyl_r":  t2_cyl_r,
+
         "geometry_block": geom_txt,
         "refinement_surfaces": refine_txt,
         "features_block": features_txt
     }
     foampy.fill_template("system/snappyHexMeshDict.template", **args_snappyHexMesh)
+
+    params = {
+        "turbine1_tsr": turbine1_tsr,
+        "turbine1_active": turbine1_active,
+        "turbine1_x": turbine1_x,
+        "turbine1_y": turbine1_y,
+        "turbine1_yaw": turbine1_yaw,
+        "turbine2_tsr": turbine2_tsr,
+        "turbine2_active": turbine2_active,
+        "turbine2_x": turbine2_x,
+        "turbine2_y": turbine2_y,
+        "turbine2_yaw": turbine2_yaw
+    }
     if verbose:
         print("Setting turbine params as:")
         for k, v in params.items():
@@ -313,9 +408,9 @@ def set_turbine_params(turbine1_tsr=6, turbine1_active="on",
 
 
 def run(turbine1_tsr=6, turbine1_active="on",
-        turbine1_x=0,
+        turbine1_x=1.788, turbine1_y=0, turbine1_D=0.944,
         turbine2_tsr=4, turbine2_active="on",
-        turbine2_x=2.682,
+        turbine2_x=4.470, turbine2_y=0, turbine2_D=0.894,
         turbine1_yaw=0, turbine2_yaw=0, nx=96, ny=None, nz=None,
         mesh=True, parallel=False, tee=False, reconstruct=True,
         overwrite=False, post=False, write_interval=None, nproc=1, use_stl=False):
@@ -323,9 +418,13 @@ def run(turbine1_tsr=6, turbine1_active="on",
     set_turbine_params(turbine1_tsr=turbine1_tsr,
                        turbine1_active=turbine1_active,
                        turbine1_x=turbine1_x,
+                       turbine1_y=turbine1_y,
+                       turbine1_D=turbine1_D,
                        turbine2_tsr=turbine2_tsr,
                        turbine2_active=turbine2_active,
                        turbine2_x=turbine2_x,
+                       turbine2_y=turbine2_y,
+                       turbine2_D=turbine2_D,
                        turbine1_yaw=turbine1_yaw,
                        turbine2_yaw=turbine2_yaw,
                        use_stl=use_stl)
@@ -360,13 +459,19 @@ def run(turbine1_tsr=6, turbine1_active="on",
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run NTNU HAWT ALM case")
     parser.add_argument("--turbine1-active", default="on")
-    parser.add_argument("--turbine1-x", default=1.788, type=float)
+    parser.add_argument("--turbine1-x", default=1.788, type=float) # Default: 2*D2
+    parser.add_argument("--turbine1-y", default=0, type=float)
+    parser.add_argument("--turbine1-D", default=0.944, type=float) # Default: D1=0.944
     parser.add_argument("--turbine1-tsr", default=6.0, type=float)
-    parser.add_argument("--turbine1-yaw", default=0.0, type=float)
+    parser.add_argument("--turbine1-yaw", default=0.0, type=float,
+                        help="Yaw angle in degrees")
     parser.add_argument("--turbine2-active", default="on")
-    parser.add_argument("--turbine2-x", default=4.470, type=float)
+    parser.add_argument("--turbine2-x", default=4.470, type=float) # Default: (2+3)*D2
+    parser.add_argument("--turbine2-y", default=0, type=float)
+    parser.add_argument("--turbine2-D", default=0.894, type=float) # Default: D2=0.894
     parser.add_argument("--turbine2-tsr", default=4.0, type=float)
-    parser.add_argument("--turbine2-yaw", default=0.0, type=float)
+    parser.add_argument("--turbine2-yaw", default=0.0, type=float,
+                        help="Yaw angle in degrees")
     parser.add_argument("--leave-mesh", "-l", default=False,
                         action="store_true", help="Leave existing mesh")
     parser.add_argument("--nx", type=int, default=96,
@@ -406,10 +511,14 @@ if __name__ == "__main__":
                     turbine1_active=args.turbine1_active,
                     turbine1_tsr=args.turbine1_tsr,
                     turbine1_x=args.turbine1_x,
+                    turbine1_y=args.turbine1_y,
+                    turbine1_D=args.turbine1_D,
                     turbine1_yaw=args.turbine1_yaw,
                     turbine2_active=args.turbine2_active,
                     turbine2_tsr=args.turbine2_tsr,
                     turbine2_x=args.turbine2_x,
+                    turbine2_y=args.turbine2_y,
+                    turbine2_D=args.turbine2_D,
                     turbine2_yaw=args.turbine2_yaw,
                     nx=args.nx,
                     ny=args.ny,
@@ -419,10 +528,14 @@ if __name__ == "__main__":
         run(turbine1_active=args.turbine1_active,
             turbine1_tsr=args.turbine1_tsr,
             turbine1_x=args.turbine1_x,
+            turbine1_y=args.turbine1_y,
+            turbine1_D=args.turbine1_D,
             turbine1_yaw=args.turbine1_yaw,
             turbine2_active=args.turbine2_active,
             turbine2_tsr=args.turbine2_tsr,
             turbine2_x=args.turbine2_x,
+            turbine2_y=args.turbine2_y,
+            turbine2_D=args.turbine2_D,
             turbine2_yaw=args.turbine2_yaw,
             nx=args.nx,
             ny=args.ny,

@@ -25,8 +25,8 @@ actions
         sourceInfo
         {{
             type cylinder;
-            p1 ({turbine1_upstream_x} 0 0); // turbine_x - 0.25
-            p2 ({turbine1_downstream_x} 0 0); // turbine_x + 0.25
+            p1 ({turbine1_upstream_x} {turbine1_rotor_y} 0); // turbine_x - 0.25
+            p2 ({turbine1_downstream_x} {turbine1_rotor_y} 0); // turbine_x + 0.25
             radius 0.6;
         }}
     }}
@@ -40,8 +40,8 @@ actions
         {{
             type cylinder;
             // 0.48 is a guess from Pierella et al drawing
-            p1 ({turbine1_tower_x} 0 -0.82);
-            p2 ({turbine1_tower_x} 0 0);
+            p1 ({turbine1_tower_x} {turbine1_tower_y} -0.82);
+            p2 ({turbine1_tower_x} {turbine1_tower_y} 0);
             radius 0.15;
         }}
     }}
@@ -65,8 +65,8 @@ actions
         sourceInfo
         {{
             type cylinder;
-            p1 ({turbine2_upstream_x} 0 0); // 2.432
-            p2 ({turbine2_downstream_x} 0 0); // 2.932
+            p1 ({turbine2_upstream_x} {turbine2_rotor_y} 0); // 2.432
+            p2 ({turbine2_downstream_x} {turbine2_rotor_y} 0); // 2.932
             radius 0.6;
         }}
     }}
@@ -79,8 +79,8 @@ actions
         sourceInfo
         {{
             type cylinder;
-            p1 ({turbine2_tower_x} 0 -0.82); // 2.822
-            p2 ({turbine2_tower_x} 0 0); // 2.822
+            p1 ({turbine2_tower_x} {turbine2_tower_y} -0.82); // 2.822
+            p2 ({turbine2_tower_x} {turbine2_tower_y} 0); // 2.822
             radius 0.1;
         }}
     }}
