@@ -150,9 +150,64 @@ def load_perf(turbine="turbine1", verbose=True):
     return df
 
 
-def calc_perf(t1=1.0):
-    """Calculate the performance of both turbines. Return NaN if turbine is
-    not active.
+def calc_perf(avg_window=0.5, avg_revs=None, solver="pimpleFoam", verbose = True):
+    """Calculate the performance of both turbines for pimpleFoam or
+    simpleFoam. Return NaN if turbine is not active.
+    """
+    df1 = pd.read_csv("postProcessing/turbines/0/turbine1.csv")
+    df2 = pd.read_csv("postProcessing/turbines/0/turbine2.csv")
+
+    if verbose:
+            print(f"Calculating performance for {solver}")
+
+    if solver == "simpleFoam":
+        # average over the final iteration
+        latest1 = df1["time"].max()
+        latest2 = df2["time"].max()
+        df1_sel = df1[df1.time == latest1]
+        df2_sel = df2[df2.time == latest2]
+        if verbose:
+            print(f"Averaging over last iteration")
+    elif avg_revs is not None:
+        # average over the specified number of revolutions
+        latest1 = df1["angle_deg"].max()
+        latest2 = df2["angle_deg"].max()
+        df1 = df1.drop_duplicates("angle_deg", keep="last")
+        df2 = df2.drop_duplicates("angle_deg", keep="last")
+        avg_angle = avg_revs * 360
+        df1_sel = df1[df1.angle_deg >= latest1 - avg_angle]
+        df2_sel = df2[df2.angle_deg >= latest2 - avg_angle]
+        if verbose:
+            print(f"Averaging over last {avg_revs} revolutions")
+    else:
+        # average over a time window
+        latest1 = df1["time"].max()
+        latest2 = df2["time"].max()
+        df1 = df1.drop_duplicates("time", keep="last")
+        df2 = df2.drop_duplicates("time", keep="last")
+        df1_sel = df1[df1.time >= latest1 - avg_window]
+        df2_sel = df2[df2.time >= latest2 - avg_window]
+        if verbose:
+            print(f"Averaging over last {avg_window} seconds")
+
+
+    # Set inactive turbines to NaN deliberately
+    def safe_mean(df, col):
+        return df[col].mean() if not df.empty else float("nan")
+
+    return {
+        "tsr_turbine1": safe_mean(df1_sel, "tsr"),
+        "cp_turbine1":  safe_mean(df1_sel, "cp"),
+        "cd_turbine1":  safe_mean(df1_sel, "cd"),
+
+        "tsr_turbine2": safe_mean(df2_sel, "tsr"),
+        "cp_turbine2":  safe_mean(df2_sel, "cp"),
+        "cd_turbine2":  safe_mean(df2_sel, "cd")}
+
+
+def calc_perf_OLD(t1=1.0):
+    """Calculate the performance of both turbines. Return NaN if turbine
+    is not active.
     """
     df1 = pd.read_csv("postProcessing/turbines/0/turbine1.csv")
     df2 = pd.read_csv("postProcessing/turbines/0/turbine2.csv")

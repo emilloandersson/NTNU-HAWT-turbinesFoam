@@ -103,6 +103,15 @@ def get_dt():
                                                       keyword="deltaT")
 
 
+def get_solver():
+    """Return the solver specified in controlDict."""
+    return foampy.dictionaries.read_single_line_value(
+        "controlDict",
+        keyword="application",
+        dtype=str
+    )
+
+
 def get_nacelle_ano_vals():
     """Lookup sampled nacelle anemometer values."""
     res = {}
@@ -122,7 +131,9 @@ def log_results(param="turbine1_yaw", append=True, verbose=True):
         df = pd.read_csv(fpath)
     else:
         df = pd.DataFrame()
-    d = pr.calc_perf()
+    solver = get_solver()
+    avg_revs = 5 # average over last 5 iterations for pimpleFoam
+    d = pr.calc_perf(avg_revs=avg_revs, solver=solver)
     d.update(get_mesh_dims())
     d["dt"] = get_dt()
     d["yaw"] = foampy.read_single_line_value(dictpath="system/fvOptions",
@@ -257,7 +268,8 @@ def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
         kwargs.update({param: p})
         run(parallel=parallel, tee=tee, mesh=mesh, reconstruct=False,
             post=False, overwrite=True, **kwargs)
-        os.rename("log.pimpleFoam", "log.pimpleFoam." + str(p))
+        solver = get_solver()
+        os.rename(f"log.{solver}", f"log.{solver}.{p}")
         log_results(param=param, append=True)
         foampy.clean(leave_mesh=True, remove_zero=True)
 
@@ -451,7 +463,8 @@ def run(turbine1_tsr=6, turbine1_active="on",
         foampy.run("topoSet", parallel=parallel, tee=tee)
         if parallel:
             foampy.run("reconstructParMesh", args="-constant -time 0", tee=tee)
-    foampy.run("pimpleFoam", parallel=parallel, tee=tee, overwrite=overwrite)
+    solver = get_solver()
+    foampy.run(solver, parallel=parallel, tee=tee, overwrite=overwrite)
     # Sample nacelle values
     gen_sets_file()
     foampy.run("postProcess", args="-func sets -latestTime",
