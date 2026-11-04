@@ -188,6 +188,10 @@ def set_dt(dt=0.01, tsr=None, tsr_0=6.0, write_interval=None, les=False):
     foampy.fill_template("system/controlDict.template", dt=dt,
                          write_interval=write_interval)
 
+def set_nproc(nproc=1):
+    foampy.fill_template("system/decomposeParDict.template",
+                         nproc=nproc)
+
 
 def gen_sets_file(origin=(0.1, 0.0, 0.04), step=0.01, yaw=None):
     """Generate ``sets`` file for post-processing nacelle anemometer
@@ -415,6 +419,8 @@ def run(turbine1_tsr=6, turbine1_active="on",
         mesh=True, parallel=False, tee=False, reconstruct=True,
         overwrite=False, post=False, write_interval=None, nproc=1, use_stl=False):
     """Run simulation once."""
+    if nproc == 1:
+        parallel = False
     set_turbine_params(turbine1_tsr=turbine1_tsr,
                        turbine1_active=turbine1_active,
                        turbine1_x=turbine1_x,
@@ -433,8 +439,10 @@ def run(turbine1_tsr=6, turbine1_active="on",
         foampy.run("blockMesh", tee=tee)
     # Copy over initial conditions
     subprocess.call("cp -rf 0.orig 0 > /dev/null 2>&1", shell=True)
+    if parallel:
+        set_nproc(nproc)
     if parallel and not glob.glob("processor*"):
-        foampy.run("decomposePar", tee=tee)
+        foampy.run("decomposePar", tee=tee, overwrite=overwrite)
         subprocess.call("for PROC in processor*; do cp -rf 0.orig/* $PROC/0; "
                         " done", shell=True)
     if mesh:
@@ -498,6 +506,8 @@ if __name__ == "__main__":
                         help="Print log files to terminal while running")
     parser.add_argument("--overwrite", "-f", default=False, action="store_true",
                         help="Clean case automatically before running")
+    parser.add_argument("--nproc", "-n", default=2, type=int,
+                    help="Number of subdomains for decomposePar")
     parser.add_argument("--use-stl", default=False, action="store_true",
                     help="Use STL wind tunnel geometry instead of blockMesh-only domain")
 
@@ -523,6 +533,7 @@ if __name__ == "__main__":
                     nx=args.nx,
                     ny=args.ny,
                     nz=args.nz,
+                    nproc=args.nproc,
                     use_stl=args.use_stl)
     elif not args.post:
         run(turbine1_active=args.turbine1_active,
@@ -541,6 +552,7 @@ if __name__ == "__main__":
             ny=args.ny,
             nz=args.nz,
             reconstruct=not args.no_reconstruct,
+            nproc=args.nproc,
             parallel=not args.serial,
             tee=args.tee,
             mesh=not args.leave_mesh,
