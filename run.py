@@ -128,7 +128,12 @@ def get_final_iteration(logfile):
 def get_nacelle_ano_vals():
     """Lookup sampled nacelle anemometer values."""
     res = {}
-    df = pr.load_nacelle_sets()
+    #df = pr.load_nacelle_sets()
+    try:
+        df = pr.load_nacelle_sets()
+    except IndexError:
+        print("WARNING: nacelle anemometer values did not sample!")
+        return res
     for idx, row in df.iterrows():
         res[f"vel_mag_{idx}"] = row.vel_mag
         res[f"vel_dir_{idx}"] = row.vel_dir
