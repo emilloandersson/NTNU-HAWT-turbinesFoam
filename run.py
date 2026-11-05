@@ -12,6 +12,8 @@ import foampy
 from foampy.dictionaries import replace_value
 import shutil
 from pynhtf import processing as pr
+import time
+
 # These vertices must fully enclose wind_tunnel.stl
 VERTICES_STL = [
     (11.5, -1.5, -0.9),
@@ -260,6 +262,7 @@ def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
 
     ``stop`` is not included.
     """
+    sweep_start = time.time()
     print("Running {} sweep".format(param))
     fpath = "processed/{}_sweep.csv".format(param)
     if not append:
@@ -309,6 +312,11 @@ def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
         foampy.clean(leave_mesh=True, remove_zero=True)
     if store_postProcessing:
         subprocess.call("cp -r constant processed/fields/constant", shell=True)
+    total_elapsed = time.time() - sweep_start
+    print("\n==============================")
+    print(f"Completed {param} sweep in {total_elapsed/60:.2f} minutes")
+    print("==============================")
+
 
 def get_snappy_geometry(use_stl=False):
     return GEOM_STL if use_stl else GEOM_BLOCKMESH
@@ -468,6 +476,8 @@ def run(turbine1_tsr=6, turbine1_active="on",
         mesh=True, parallel=False, tee=False, reconstruct=True,
         overwrite=False, post=False, write_interval=None, nproc=1, use_stl=False):
     """Run simulation once."""
+
+    start_time = time.time()
     if nproc == 1:
         parallel = False
     set_turbine_params(turbine1_tsr=turbine1_tsr,
@@ -512,6 +522,8 @@ def run(turbine1_tsr=6, turbine1_active="on",
     if post:
         post_process(overwrite=overwrite, parallel=parallel,
                      reconstruct=not reconstruct)
+    elapsed = time.time() - start_time
+    print(f"Run completed in {elapsed/60:.2f} minutes ({elapsed:.1f} seconds)")
 
 
 if __name__ == "__main__":
