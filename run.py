@@ -112,6 +112,15 @@ def get_solver():
     )
 
 
+def get_final_iteration(logfile):
+    with open(logfile) as f:
+        for line in reversed(f.readlines()):
+            if line.startswith("Time ="):
+                return line.split("=")[1].strip()
+
+    raise RuntimeError(f"No time found in {logfile}")
+
+
 def get_nacelle_ano_vals():
     """Lookup sampled nacelle anemometer values."""
     res = {}
@@ -245,17 +254,24 @@ def post_process(parallel=False, tee=False, reconstruct=False, overwrite=True):
 
 
 def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
-                dtype=float, append=False, parallel=True, tee=False, **kwargs):
+                dtype=float, append=False, parallel=True, tee=False,
+                store_postProcessing=False, **kwargs):
     """Run multiple simulations, varying ``param``.
 
     ``stop`` is not included.
     """
     print("Running {} sweep".format(param))
     fpath = "processed/{}_sweep.csv".format(param)
-    if not append and os.path.isfile(fpath):
-        os.remove(fpath)
+    if not append:
+        if os.path.isfile(fpath):
+            os.remove(fpath)
+        subprocess.call(f"rm processed/log.*", shell=True)
+        subprocess.call(f"rm -rf processed/postProcessing.*", shell=True)
+        subprocess.call(f"rm -rf processed/fields/*", shell=True)
     if param == "nx":
         dtype = int
+    if store_postProcessing:
+        os.makedirs("processed/fields", exist_ok=True)
     param_list = np.arange(start, stop, step, dtype=dtype)
     for p in param_list:
         print("Running with {} = {}".format(param, p))
@@ -270,8 +286,29 @@ def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
             post=False, overwrite=True, **kwargs)
         solver = get_solver()
         os.rename(f"log.{solver}", f"log.{solver}.{p}")
+        if store_postProcessing:
+            subprocess.call(f"cp log.{solver}.{p} processed/", shell=True)
+            subprocess.call(f"cp -r postProcessing processed/postProcessing.{p}", shell=True)
+            print(f"Saved log and postProcessing for parameter {p} in processed/")
+            # reconstruct the final field and store w.r.t. parameter name
+            convergenceTime = get_final_iteration(f"log.{solver}.{p}")
+            subprocess.call(
+                f"reconstructPar -time {convergenceTime} >> log.sweepReconstruct 2>&1",
+                shell=True
+            )
+            if not os.path.isdir(convergenceTime):
+                raise RuntimeError(
+                    f"reconstructPar did not create {convergenceTime}"
+                )
+            stored_time = f"processed/fields/{10000 + p}"
+            if os.path.isdir(stored_time):
+                shutil.rmtree(stored_time)
+            os.rename(convergenceTime, stored_time)
+            print(f"Saved reconstructed final time {convergenceTime} as {stored_time}")
         log_results(param=param, append=True)
         foampy.clean(leave_mesh=True, remove_zero=True)
+    if store_postProcessing:
+        subprocess.call("cp -r constant processed/fields/constant", shell=True)
 
 def get_snappy_geometry(use_stl=False):
     return GEOM_STL if use_stl else GEOM_BLOCKMESH
@@ -523,6 +560,8 @@ if __name__ == "__main__":
                     help="Number of subdomains for decomposePar")
     parser.add_argument("--use-stl", default=False, action="store_true",
                     help="Use STL wind tunnel geometry instead of blockMesh-only domain")
+    parser.add_argument("--store-postProcessing", default=False, action="store_true",
+                    help="Store the postProcessing folder for each parameter sweep step")
 
     args = parser.parse_args()
 
@@ -547,7 +586,8 @@ if __name__ == "__main__":
                     ny=args.ny,
                     nz=args.nz,
                     nproc=args.nproc,
-                    use_stl=args.use_stl)
+                    use_stl=args.use_stl,
+                    store_postProcessing=args.store_postProcessing)
     elif not args.post:
         run(turbine1_active=args.turbine1_active,
             turbine1_tsr=args.turbine1_tsr,
