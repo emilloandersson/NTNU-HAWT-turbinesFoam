@@ -1,0 +1,3 @@
+// List of Reynolds numbers
+// Data from airfoiltools.com (S826)
+50000 100000 200000 500000 1000000

@@ -128,7 +128,25 @@ turbine1
         {{
             S826
             {{
-                data (#include "S826_1e5_Ostavan");
+                tableType              multiRe; // singleRe (default) || multiRe
+                Re                     1e5; // For tableType = singleRe
+		velocitySampleRadius   2.0;
+                data // For tableType = singleRe
+                (   // alpha C_l C_d
+		    #include "../foilData/S826_1e5_Ostavan"
+                );
+                ReList // For tableType = multiRe
+                (
+                    #include "../foilData/S826_2017bartl_multiRe_Re"
+                );
+                clData // For tableType = multiRe
+		        (
+                    #include "../foilData/S826_2017bartl_multiRe_cl"
+                );
+                cdData // For tableType = multiRe
+		        (
+                    #include "../foilData/S826_2017bartl_multiRe_cd"
+                );
             }}
             cylinder
             {{
@@ -239,7 +257,25 @@ turbine2
         {{
             S826
             {{
-                data (#include "S826_8e4_Chivaee");
+                tableType              multiRe; // singleRe (default) || multiRe
+                Re                     1e5; // For tableType = singleRe
+		velocitySampleRadius   2.0;
+                data // For tableType = singleRe
+                (   // alpha C_l C_d
+		    #include "../foilData/S826_1e5_Ostavan"
+                );
+                ReList // For tableType = multiRe
+                (
+                    #include "../foilData/S826_2017bartl_multiRe_Re"
+                );
+                clData // For tableType = multiRe
+		        (
+                    #include "../foilData/S826_2017bartl_multiRe_cl"
+                );
+                cdData // For tableType = multiRe
+		        (
+                    #include "../foilData/S826_2017bartl_multiRe_cd"
+                );
             }}
             cylinder
             {{
