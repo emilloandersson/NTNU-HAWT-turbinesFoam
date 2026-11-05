@@ -96,7 +96,9 @@ def get_mesh_dims():
     raw = check_output("grep blocks system/blockMeshDict -A3",
                        shell=True).decode().split("\n")[3]
     raw = raw.replace("(", "").replace(")", "").split()
-    return {"nx": int(raw[0]), "ny": int(raw[1]), "nz": int(raw[2])}
+    # block ordering from vertex ordering
+    # (the vertex ordering should be fixed)
+    return {"nx": int(raw[1]), "ny": int(raw[0]), "nz": int(raw[2])}
 
 
 def get_dt():
