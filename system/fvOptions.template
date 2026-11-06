@@ -24,6 +24,7 @@ turbine1
     axialFlowTurbineALSourceCoeffs
     {{
         fieldNames          (U);
+        forceFieldName      "_force";
         selectionMode       cellSet; // cellSet || points || cellZone
         cellSet             turbine1;
         origin              ({turbine1_x} {turbine1_y} 0);
@@ -165,6 +166,7 @@ turbine2
     axialFlowTurbineALSourceCoeffs
     {{
         fieldNames          (U);
+        forceFieldName      "_force";
         selectionMode       cellSet; // cellSet || points || cellZone
         cellSet             turbine2;
         origin              ({turbine2_x} {turbine2_y} 0); // 2.682
