@@ -107,16 +107,32 @@ def get_dt():
                                                       keyword="deltaT")
 
 
+def get_end_time():
+    """Read ``endTime`` from ``controlDict``."""
+    return foampy.dictionaries.read_single_line_value("controlDict",
+                                                      keyword="endTime")
+
+
+def get_avg_start_time():
+    """Read ``timeStart`` from ``fieldAverage`` in ``controlDict``."""
+    return foampy.dictionaries.read_single_line_value("controlDict",
+                                                      keyword="timeStart")
+
+
+def get_write_interval():
+    """Read ``writeInterval`` from ``controlDict``."""
+    return foampy.dictionaries.read_single_line_value("controlDict",
+                                                      keyword="writeInterval")
+
+
 def get_solver():
-    """Return the solver specified in controlDict."""
-    return foampy.dictionaries.read_single_line_value(
-        "controlDict",
-        keyword="application",
-        dtype=str
-    )
+    with open("system/controlDict.template") as f:
+        for line in f:
+            if line.strip().startswith("application"):
+                return line.replace(";", "").split()[1]
 
 
-def get_final_iteration(logfile):
+def get_final_time(logfile):
     with open(logfile) as f:
         for line in reversed(f.readlines()):
             if line.startswith("Time ="):
@@ -124,6 +140,32 @@ def get_final_iteration(logfile):
 
     raise RuntimeError(f"No time found in {logfile}")
 
+def get_latest_written_time(endTime,
+                            proc_dir="processor0"):
+
+    endTime = float(endTime)
+
+    latest_time = None
+    latest_dir = None
+
+    for d in os.listdir(proc_dir):
+        try:
+            t = float(d)
+
+            if t <= endTime + 1e-12:
+                if latest_time is None or t > latest_time:
+                    latest_time = t
+                    latest_dir = d
+
+        except ValueError:
+            pass
+
+    if latest_dir is None:
+        raise RuntimeError(
+            f"No written fields found before time {endTime}"
+        )
+
+    return latest_dir
 
 def get_nacelle_ano_vals():
     """Lookup sampled nacelle anemometer values."""
@@ -199,23 +241,219 @@ def set_blockmesh(nx=96, ny=None, nz=None, use_stl=False):
         vertices=vertices_txt
     )
 
+def configure_controlDict(solver=None, **kwargs):
 
-def set_dt(dt=0.01, tsr=None, tsr_0=6.0, write_interval=None, les=False):
-    """Set ``deltaT`` in ``controlDict``. Will scale proportionally if ``tsr``
-    and ``tsr_0`` are supplied, such that steps-per-rev is consistent with
-    ``tsr_0``.
-    """
-    if tsr is not None:
-        dt = dt*tsr_0/tsr
-        print("Setting deltaT = dt*tsr_0/tsr = {:.3f}".format(dt))
-    dt = str(dt)
+    if solver == "simpleFoam":
+        if kwargs.get("tsr_adjust_dt_flag", False):
+            raise RuntimeError(
+                "TSR-adjusted dt is not supported for simpleFoam"
+            )
+        if kwargs.get("tsr_adjust_endTime_flag", False):
+            raise RuntimeError(
+                "TSR-adjusted endTime is not supported for simpleFoam"
+            )
+        return configure_simpleFoam_controlDict(**kwargs)
+    elif solver == "pimpleFoam":
+        return configure_pimpleFoam_controlDict(**kwargs)
+    else:
+        raise RuntimeError(
+            f"Solver {solver} is not supported"
+        )
+
+def configure_simpleFoam_controlDict(dt=None, endTime=None, avgStartTime=None,
+                                     write_interval=None, **kwargs):
+
+    if dt is not None:
+        print(
+            "WARNING: dt ignored for simpleFoam"
+        )
+
+    if avgStartTime is not None:
+        print(
+            "WARNING: avgStartTime ignored for simpleFoam"
+        )
+
+    dt = get_dt()
+
+    if (endTime is None and
+        write_interval is None
+    ):
+        return
+
+    if endTime is None:
+        endTime = get_end_time()
+
     if write_interval is None:
-        if les:
-            write_interval = 0.01
-        else:
-            write_interval = 0.05
-    foampy.fill_template("system/controlDict.template", dt=dt,
-                         write_interval=write_interval)
+        write_interval = get_write_interval()
+
+    set_control(
+        dt=dt,
+        endTime=endTime,
+        write_interval=write_interval
+    )
+
+    return dt, endTime
+
+
+def configure_pimpleFoam_controlDict(
+        dt=None,
+        endTime=None,
+        write_interval=None,
+        avgStartTime=None,
+        tsr_adjust_dt_flag=False,
+        tsr_adjust_endTime_flag=False,
+        dt_adjust_turbine="max",
+        tsr_0=6.0,
+        nrevs=10,
+        Uinf=10.0,
+        tunnel_length=12.0,
+        turbine1_D=0.944,
+        turbine1_tsr=None,
+        turbine1_active="on",
+        turbine2_D=0.894,
+        turbine2_tsr=None,
+        turbine2_active="on",
+        **kwargs):
+    """
+    Compute dt and endTime and write controlDict.
+    """
+
+    # Nothing requested -> leave existing controlDict alone
+    if (
+        dt is None and
+        endTime is None and
+        write_interval is None and
+        avgStartTime is None and
+        not tsr_adjust_dt_flag and
+        not tsr_adjust_endTime_flag
+    ):
+        return
+
+    # Base endTime: flow-through time
+    if endTime is None:
+        endTime = get_end_time()
+
+    # Select TSR used for timestep adjustment
+    tsr_for_dt = None
+
+    if dt_adjust_turbine == "max":
+        active_tsrs = []
+        if turbine1_active == "on" and turbine1_tsr is not None:
+            active_tsrs.append(turbine1_tsr)
+        if turbine2_active == "on" and turbine2_tsr is not None:
+            active_tsrs.append(turbine2_tsr)
+        if active_tsrs:
+            tsr_for_dt = max(active_tsrs)
+    elif dt_adjust_turbine == "turbine1":
+        if turbine1_active == "on":
+            tsr_for_dt = turbine1_tsr
+    elif dt_adjust_turbine == "turbine2":
+        if turbine2_active == "on":
+            tsr_for_dt = turbine2_tsr
+    else:
+        raise ValueError(
+            "dt_adjust_turbine must be "
+            "'max', 'turbine1', or 'turbine2'"
+        )
+
+    # Optional TSR-adjusted timestep
+    if tsr_adjust_dt_flag and dt is None:
+        raise RuntimeError(
+            "tsr_adjust_dt=True requires dt to be specified"
+        )
+    if tsr_adjust_dt_flag and tsr_for_dt is not None:
+        dt = tsr_adjust_dt(
+            dt=dt,
+            tsr=tsr_for_dt,
+            tsr_0=tsr_0
+        )
+
+    # Optional TSR-adjusted endTime
+    if tsr_adjust_endTime_flag:
+        endTime = tsr_adjust_endTime(
+            endTime=endTime,
+            nrevs=nrevs,
+            turbine1_D=turbine1_D,
+            turbine1_tsr=turbine1_tsr,
+            turbine1_active=turbine1_active,
+            turbine2_D=turbine2_D,
+            turbine2_tsr=turbine2_tsr,
+            turbine2_active=turbine2_active,
+            Uinf=Uinf,
+        )
+
+    # Default averaging start
+    if avgStartTime is None:
+        avgStartTime = get_avg_start_time()
+    if dt is None:
+        dt = get_dt()
+    if write_interval is None:
+        write_interval = get_write_interval()
+
+    set_control(dt=dt, endTime=endTime,
+                write_interval=write_interval,
+                avgStartTime=avgStartTime)
+
+    return dt, endTime
+
+
+def set_control(dt=0.01, endTime=1.5, write_interval=None, avgStartTime=1.0):
+    foampy.fill_template(
+        "system/controlDict.template",
+        dt=dt,
+        endTime=endTime,
+        write_interval = write_interval,
+        avgStartTime=avgStartTime)
+
+
+def tsr_adjust_endTime(endTime, nrevs=10, Uinf=10.0,
+                       turbine1_D=0.944, turbine1_tsr=None, turbine1_active="on",
+                       turbine2_D=0.894, turbine2_tsr=None, turbine2_active="on"):
+    """
+    Extend endTime such that all active turbines complete
+    at least nrevs revolutions after endTime has been reached.
+    """
+
+    required_times = []
+
+    if turbine1_active == "on" and turbine1_tsr is not None:
+        t1 = nrevs * np.pi * turbine1_D / (turbine1_tsr * Uinf)
+        required_times.append(t1)
+
+    if turbine2_active == "on" and turbine2_tsr is not None:
+        t2 = nrevs * np.pi * turbine2_D / (turbine2_tsr * Uinf)
+        required_times.append(t2)
+
+    if not required_times:
+        return endTime
+
+    t_extra = max(required_times)
+
+    print(
+        f"Adding {t_extra:.5f} s to endTime "
+        f"for {nrevs} turbine revolutions"
+    )
+
+    return endTime + t_extra
+
+
+def tsr_adjust_dt(dt=0.01, tsr=None, tsr_0=None):
+    """
+    Return an adjusted timestep such that the number of
+    timesteps per revolution remains constant.
+    """
+    if tsr is None or tsr_0 is None:
+        return dt
+
+    dt_new = dt * tsr_0 / tsr
+
+    print(
+        f"Adjusting dt from {dt:.5f} to {dt_new:.5f} "
+        f"(tsr={tsr}, tsr_0={tsr_0})"
+    )
+
+    return dt_new
+
 
 def set_nproc(nproc=1):
     foampy.fill_template("system/decomposeParDict.template",
@@ -282,6 +520,7 @@ def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
         dtype = int
     if store_postProcessing:
         os.makedirs("processed/fields", exist_ok=True)
+    proc_dir = "." if not parallel else "processor0"
     param_list = np.arange(start, stop, step, dtype=dtype)
     for p in param_list:
         print("Running with {} = {}".format(param, p))
@@ -301,20 +540,23 @@ def param_sweep(param="turbine1_yaw", start=-20, stop=21, step=5,
             subprocess.call(f"cp -r postProcessing processed/postProcessing.{p}", shell=True)
             print(f"Saved log and postProcessing for parameter {p} in processed/")
             # reconstruct the final field and store w.r.t. parameter name
-            convergenceTime = get_final_iteration(f"log.{solver}.{p}")
-            subprocess.call(
-                f"reconstructPar -time {convergenceTime} >> log.sweepReconstruct 2>&1",
-                shell=True
-            )
-            if not os.path.isdir(convergenceTime):
-                raise RuntimeError(
-                    f"reconstructPar did not create {convergenceTime}"
-                )
+            convergenceTime = get_final_time(f"log.{solver}.{p}")
+            if os.path.isdir(f"{proc_dir}/{convergenceTime}"):
+                fieldTime = convergenceTime
+            else:
+                fieldTime = get_latest_written_time(convergenceTime, proc_dir=proc_dir)
+                print(f"WARNING: No field written at {convergenceTime}. "
+                    f"Using latest available field time {fieldTime}.")
+            if parallel:
+                subprocess.call(f"reconstructPar -time {fieldTime} "
+                                f">> log.sweepReconstruct 2>&1", shell=True)
             stored_time = f"processed/fields/{10000 + p}"
             if os.path.isdir(stored_time):
                 shutil.rmtree(stored_time)
-            os.rename(convergenceTime, stored_time)
-            print(f"Saved reconstructed final time {convergenceTime} as {stored_time}")
+            if not os.path.isdir(fieldTime):
+                raise RuntimeError(f"reconstructPar did not create {fieldTime}")
+            os.rename(fieldTime, stored_time)
+            print(f"Saved reconstructed final time {fieldTime} as {stored_time}")
         log_results(param=param, append=True)
         foampy.clean(leave_mesh=True, remove_zero=True)
     if store_postProcessing:
@@ -480,11 +722,14 @@ def run(turbine1_tsr=6, turbine1_active="on",
         turbine2_tsr=4, turbine2_active="on",
         turbine2_x=4.470, turbine2_y=0, turbine2_D=0.894,
         turbine1_yaw=0, turbine2_yaw=0, nx=96, ny=None, nz=None,
+        dt=None, endTime=None, avgStartTime=None, nrevs=10, dt_adjust_turbine='max',
+        tsr_adjust_dt=False, tsr_0=6.0, tsr_adjust_endTime=False,
         mesh=True, parallel=False, tee=False, reconstruct=True,
         overwrite=False, post=False, write_interval=None, nproc=1, use_stl=False):
     """Run simulation once."""
 
     start_time = time.time()
+    solver = get_solver()
     if nproc == 1:
         parallel = False
     set_turbine_params(turbine1_tsr=turbine1_tsr,
@@ -500,6 +745,25 @@ def run(turbine1_tsr=6, turbine1_active="on",
                        turbine1_yaw=turbine1_yaw,
                        turbine2_yaw=turbine2_yaw,
                        use_stl=use_stl)
+    configure_controlDict(
+        solver=solver,
+        dt=dt,
+        endTime=endTime,
+        write_interval=write_interval,
+        avgStartTime=avgStartTime,
+        tsr_adjust_dt_flag=tsr_adjust_dt,
+        tsr_adjust_endTime_flag=tsr_adjust_endTime,
+        tsr_0=tsr_0,
+        dt_adjust_turbine=dt_adjust_turbine,
+        nrevs=nrevs,
+        Uinf=10.0,
+        tunnel_length=12.0,
+        turbine1_D=turbine1_D,
+        turbine1_tsr=turbine1_tsr,
+        turbine1_active=turbine1_active,
+        turbine2_D=turbine2_D,
+        turbine2_tsr=turbine2_tsr,
+        turbine2_active=turbine2_active)
     if mesh:
         set_blockmesh(nx=nx, ny=ny, nz=nz, use_stl=use_stl)
         foampy.run("blockMesh", tee=tee)
@@ -517,7 +781,6 @@ def run(turbine1_tsr=6, turbine1_active="on",
         foampy.run("topoSet", parallel=parallel, tee=tee)
         if parallel:
             foampy.run("reconstructParMesh", args="-constant -time 0", tee=tee)
-    solver = get_solver()
     foampy.run(solver, parallel=parallel, tee=tee, overwrite=overwrite)
     # Sample nacelle values
     gen_sets_file()
@@ -552,16 +815,36 @@ if __name__ == "__main__":
     parser.add_argument("--leave-mesh", "-l", default=False,
                         action="store_true", help="Leave existing mesh")
     parser.add_argument("--nx", type=int, default=96,
-                    help="Number of cells in x-direction for blockMesh")
+                        help="Number of cells in x-direction for blockMesh")
     parser.add_argument("--ny", type=int, default=None,
-                    help="Number of cells in y-direction for blockMesh")
+                        help="Number of cells in y-direction for blockMesh")
     parser.add_argument("--nz", type=int, default=None,
-                    help="Number of cells in z-direction for blockMesh")
+                        help="Number of cells in z-direction for blockMesh")
+    parser.add_argument("--dt", type=float, default=None,
+                        help="Time step size")
+    parser.add_argument("--tsr-adjust-dt", default=False,
+                        action="store_true",
+                        help="Adjust dt after TSR to keep approximately constant steps per revolution")
+    parser.add_argument("--tsr-0", type=float, default=6.0,
+                        help="Reference TSR used for dt adjustment")
+    parser.add_argument("--dt-adjust-turbine", type=str, default="max",
+                        choices=["max", "turbine1", "turbine2"],
+                        help="Which turbine TSR should be used when adjusting dt")
+    parser.add_argument("--endTime", type=float, default=None,
+                        help="Simulation end time")
+    parser.add_argument("--tsr-adjust-endTime", default=False,
+                        action="store_true",
+                        help="Adjust the end time after the TSR")
+    parser.add_argument("--nrevs", type=int, default=10,
+                        help="Number of revolutions required when adjusting endTime")
+    parser.add_argument("--write-interval", type=float, default=None,
+                        help="Write interval for controlDict")
+    parser.add_argument("--avgStartTime", type=float, default=None,
+                        help="Start time for field averaging")
     parser.add_argument("--no-reconstruct", default=False, action="store_true",
                         help="Do not reconstruct mesh and fields")
     parser.add_argument("--post", "-P", default=False, action="store_true",
-                        help="Run post-processing (done by default at end of "
-                             " run)")
+                        help="Run post-processing (done by default at end of run)")
     parser.add_argument("--param-sweep", "-p",
                         help="Run multiple simulations varying a parameter",
                         choices=["turbine1_tsr", "turbine2_tsr",
@@ -576,11 +859,11 @@ if __name__ == "__main__":
     parser.add_argument("--overwrite", "-f", default=False, action="store_true",
                         help="Clean case automatically before running")
     parser.add_argument("--nproc", "-n", default=2, type=int,
-                    help="Number of subdomains for decomposePar")
+                        help="Number of subdomains for decomposePar")
     parser.add_argument("--use-stl", default=False, action="store_true",
-                    help="Use STL wind tunnel geometry instead of blockMesh-only domain")
+                        help="Use STL wind tunnel geometry instead of blockMesh-only domain")
     parser.add_argument("--store-postProcessing", default=False, action="store_true",
-                    help="Store the postProcessing folder for each parameter sweep step")
+                        help="Store the postProcessing folder for each parameter sweep step")
 
     args = parser.parse_args()
 
@@ -606,7 +889,16 @@ if __name__ == "__main__":
                     nz=args.nz,
                     nproc=args.nproc,
                     use_stl=args.use_stl,
-                    store_postProcessing=args.store_postProcessing)
+                    store_postProcessing=args.store_postProcessing,
+                    dt=args.dt,
+                    endTime=args.endTime,
+                    write_interval=args.write_interval,
+                    avgStartTime=args.avgStartTime,
+                    tsr_adjust_dt=args.tsr_adjust_dt,
+                    tsr_adjust_endTime=args.tsr_adjust_endTime,
+                    dt_adjust_turbine=args.dt_adjust_turbine,
+                    tsr_0=args.tsr_0,
+                    nrevs=args.nrevs)
     elif not args.post:
         run(turbine1_active=args.turbine1_active,
             turbine1_tsr=args.turbine1_tsr,
@@ -629,7 +921,16 @@ if __name__ == "__main__":
             tee=args.tee,
             mesh=not args.leave_mesh,
             overwrite=args.overwrite,
-            use_stl=args.use_stl)
+            use_stl=args.use_stl,
+            dt=args.dt,
+            endTime=args.endTime,
+            write_interval=args.write_interval,
+            avgStartTime=args.avgStartTime,
+            tsr_adjust_dt=args.tsr_adjust_dt,
+            tsr_adjust_endTime=args.tsr_adjust_endTime,
+            dt_adjust_turbine=args.dt_adjust_turbine,
+            tsr_0=args.tsr_0,
+            nrevs=args.nrevs)
     if args.post:
         post_process(parallel=not args.serial, tee=args.tee,
                      overwrite=args.overwrite)
