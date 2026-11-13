@@ -19,6 +19,7 @@ dynamicCode
 figures
 
 system/blockMeshDict
+system/controlDict
 system/fvOptions
 system/decomposeParDict
 system/sampleDict

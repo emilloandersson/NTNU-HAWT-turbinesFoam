@@ -14,6 +14,12 @@ import shutil
 from pynhtf import processing as pr
 import time
 
+PIMPLE_DEFAULT_DT = 0.001
+PIMPLE_DEFAULT_ENDTIME = 1.5
+
+SIMPLE_DEFAULT_DT = 1
+SIMPLE_DEFAULT_ENDTIME = 2000
+
 # These vertices must fully enclose wind_tunnel.stl
 VERTICES_STL = [
     (11.5, -1.5, -0.9),
@@ -105,24 +111,6 @@ def get_dt():
     """Read ``deltaT`` from ``controlDict``."""
     return foampy.dictionaries.read_single_line_value("controlDict",
                                                       keyword="deltaT")
-
-
-def get_end_time():
-    """Read ``endTime`` from ``controlDict``."""
-    return foampy.dictionaries.read_single_line_value("controlDict",
-                                                      keyword="endTime")
-
-
-def get_avg_start_time():
-    """Read ``timeStart`` from ``fieldAverage`` in ``controlDict``."""
-    return foampy.dictionaries.read_single_line_value("controlDict",
-                                                      keyword="timeStart")
-
-
-def get_write_interval():
-    """Read ``writeInterval`` from ``controlDict``."""
-    return foampy.dictionaries.read_single_line_value("controlDict",
-                                                      keyword="writeInterval")
 
 
 def get_solver():
@@ -265,7 +253,7 @@ def configure_simpleFoam_controlDict(dt=None, endTime=None, avgStartTime=None,
 
     if dt is not None:
         print(
-            "WARNING: dt ignored for simpleFoam"
+            "WARNING: dt is always 1 for simpleFoam"
         )
 
     if avgStartTime is not None:
@@ -273,23 +261,20 @@ def configure_simpleFoam_controlDict(dt=None, endTime=None, avgStartTime=None,
             "WARNING: avgStartTime ignored for simpleFoam"
         )
 
-    dt = get_dt()
-
-    if (endTime is None and
-        write_interval is None
-    ):
-        return
+    dt = SIMPLE_DEFAULT_DT
 
     if endTime is None:
-        endTime = get_end_time()
+        endTime = SIMPLE_DEFAULT_ENDTIME
+
 
     if write_interval is None:
-        write_interval = get_write_interval()
+        write_interval = round(endTime/4)
 
     set_control(
         dt=dt,
         endTime=endTime,
-        write_interval=write_interval
+        write_interval=write_interval,
+        avgStartTime=endTime # Assigned but unused
     )
 
     return dt, endTime
@@ -317,21 +302,11 @@ def configure_pimpleFoam_controlDict(
     """
     Compute dt and endTime and write controlDict.
     """
-
-    # Nothing requested -> leave existing controlDict alone
-    if (
-        dt is None and
-        endTime is None and
-        write_interval is None and
-        avgStartTime is None and
-        not tsr_adjust_dt_flag and
-        not tsr_adjust_endTime_flag
-    ):
-        return
-
-    # Base endTime: flow-through time
+    # Default values
+    if dt is None:
+        dt = PIMPLE_DEFAULT_DT
     if endTime is None:
-        endTime = get_end_time()
+        endTime = PIMPLE_DEFAULT_ENDTIME
 
     # Select TSR used for timestep adjustment
     tsr_for_dt = None
@@ -356,11 +331,6 @@ def configure_pimpleFoam_controlDict(
             "'max', 'turbine1', or 'turbine2'"
         )
 
-    # Optional TSR-adjusted timestep
-    if tsr_adjust_dt_flag and dt is None:
-        raise RuntimeError(
-            "tsr_adjust_dt=True requires dt to be specified"
-        )
     if tsr_adjust_dt_flag and tsr_for_dt is not None:
         dt = tsr_adjust_dt(
             dt=dt,
@@ -384,11 +354,9 @@ def configure_pimpleFoam_controlDict(
 
     # Default averaging start
     if avgStartTime is None:
-        avgStartTime = get_avg_start_time()
-    if dt is None:
-        dt = get_dt()
+        avgStartTime = 0.8 * endTime
     if write_interval is None:
-        write_interval = get_write_interval()
+        write_interval = 5 * dt
 
     set_control(dt=dt, endTime=endTime,
                 write_interval=write_interval,
@@ -397,7 +365,7 @@ def configure_pimpleFoam_controlDict(
     return dt, endTime
 
 
-def set_control(dt=0.01, endTime=1.5, write_interval=None, avgStartTime=1.0):
+def set_control(dt, endTime, write_interval, avgStartTime):
     foampy.fill_template(
         "system/controlDict.template",
         dt=dt,
