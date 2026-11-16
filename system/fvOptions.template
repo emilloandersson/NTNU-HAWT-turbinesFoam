@@ -25,6 +25,7 @@ turbine1
     {{
         fieldNames          (U);
         forceFieldName      "_force";
+        writeFieldsAtEnd    true;
         selectionMode       cellSet; // cellSet || points || cellZone
         cellSet             turbine1;
         origin              ({turbine1_x} {turbine1_y} 0);
@@ -44,7 +45,7 @@ turbine1
         endEffects
         {{
             active          on;
-            endEffectsModel liftingLine;
+            endEffectsModel Glauert; // liftingLine || Glauert || Shen
             GlauertCoeffs
             {{
                 tipEffects  on;
@@ -66,6 +67,7 @@ turbine1
                 writePerf   true;
                 writeElementPerf true;
                 nElements   28;
+                velocitySampleRadius   2.0;
                 elementProfiles
                 (
                     cylinder
@@ -131,7 +133,6 @@ turbine1
             {{
                 tableType              multiRe; // singleRe (default) || multiRe
                 Re                     1e5; // For tableType = singleRe
-		velocitySampleRadius   2.0;
                 data // For tableType = singleRe
                 (   // alpha C_l C_d
 		    #include "../foilData/S826_1e5_Ostavan"
@@ -167,6 +168,7 @@ turbine2
     {{
         fieldNames          (U);
         forceFieldName      "_force";
+        writeFieldsAtEnd    true;
         selectionMode       cellSet; // cellSet || points || cellZone
         cellSet             turbine2;
         origin              ({turbine2_x} {turbine2_y} 0); // 2.682
@@ -194,6 +196,7 @@ turbine2
                 writePerf   true;
                 writeElementPerf true;
                 nElements   28;
+                velocitySampleRadius   2.0;
                 elementProfiles
                 (
                     cylinder
@@ -261,7 +264,6 @@ turbine2
             {{
                 tableType              multiRe; // singleRe (default) || multiRe
                 Re                     1e5; // For tableType = singleRe
-		velocitySampleRadius   2.0;
                 data // For tableType = singleRe
                 (   // alpha C_l C_d
 		    #include "../foilData/S826_1e5_Ostavan"
